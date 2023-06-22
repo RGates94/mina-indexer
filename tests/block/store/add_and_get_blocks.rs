@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use mina_indexer::block::{parser::BlockParser, store::BlockStoreConn};
+use mina_indexer::block::{parser::BlockParser, store::{BlockStoreConn, BlockStorageConnection}};
 use tokio::time::Instant;
 
 #[tokio::test]

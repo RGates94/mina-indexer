@@ -8,28 +8,17 @@ use thiserror::Error;
 
 use super::precomputed::PrecomputedBlock;
 
-#[derive(Debug, Clone)]
-pub struct BlockStore(pub PathBuf);
+use mockall::*;
+use mockall::predicate::*;
 
-impl r2d2::ManageConnection for BlockStore {
-    type Connection = BlockStoreConn;
+pub trait BlockStorage: r2d2::ManageConnection {}
 
-    type Error = BlockStoreError;
-
-    fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let mut secondary = self.0.clone();
-        secondary.push("secondary");
-        BlockStoreConn::new_read_only(&self.0, &secondary)
-    }
-
-    fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), Self::Error> {
-        conn.test_conn()?;
-        Ok(())
-    }
-
-    fn has_broken(&self, _conn: &mut Self::Connection) -> bool {
-        false
-    }
+#[automock]
+pub trait BlockStorageConnection {
+    fn add_block(&self, block: &PrecomputedBlock) -> anyhow::Result<()>;
+    fn get_block(&self, state_hash: &str) -> anyhow::Result<Option<PrecomputedBlock>>;
+    fn db_path(&self) -> &Path;
+    fn test_conn(&mut self) -> BlockStoreResult<()>;
 }
 
 #[derive(Debug)]
@@ -57,15 +46,17 @@ impl BlockStoreConn {
             database,
         })
     }
+}
 
-    pub fn add_block(&self, block: &PrecomputedBlock) -> anyhow::Result<()> {
+impl BlockStorageConnection for BlockStoreConn {
+    fn add_block(&self, block: &PrecomputedBlock) -> anyhow::Result<()> {
         let key = block.state_hash.as_bytes();
         let value = bcs::to_bytes(&block)?;
         self.database.put(key, value)?;
         Ok(())
     }
 
-    pub fn get_block(&self, state_hash: &str) -> anyhow::Result<Option<PrecomputedBlock>> {
+    fn get_block(&self, state_hash: &str) -> anyhow::Result<Option<PrecomputedBlock>> {
         self.database.try_catch_up_with_primary().ok();
         let key = state_hash.as_bytes();
         if let Some(bytes) = self.database.get_pinned(key)?.map(|bytes| bytes.to_vec()) {
@@ -75,22 +66,22 @@ impl BlockStoreConn {
         Ok(None)
     }
 
-    pub fn db_path(&self) -> &Path {
+    fn db_path(&self) -> &Path {
         &self.db_path
     }
 
-    pub fn test_conn(&mut self) -> BlockStoreResult<()> {
+    fn test_conn(&mut self) -> BlockStoreResult<()> {
         self.database.put("test", "value")?;
         self.database.delete("test")?;
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum BlockStoreError {
     DBError(rocksdb::Error),
 }
-type BlockStoreResult<T> = std::result::Result<T, BlockStoreError>;
+type BlockStoreResult<T> = Result<T, BlockStoreError>;
 
 impl Display for BlockStoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -105,5 +96,16 @@ impl Display for BlockStoreError {
 impl From<rocksdb::Error> for BlockStoreError {
     fn from(value: rocksdb::Error) -> Self {
         Self::DBError(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_mock_block_store() {
+        let mut mock_conn = MockBlockStorageConnection::new();
+        mock_conn.expect_get_block().returning(|_| Ok(None));
+        assert_eq!(None, mock_conn.get_block("").unwrap());
     }
 }

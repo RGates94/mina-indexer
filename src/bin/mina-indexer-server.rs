@@ -7,7 +7,7 @@ use interprocess::local_socket::tokio::{LocalSocketListener, LocalSocketStream};
 use mina_indexer::{
     block::{
         parser::BlockParser, precomputed::PrecomputedBlock, receiver::BlockReceiver,
-        store::BlockStoreConn, BlockHash,
+        store::{BlockStoreConn, BlockStorageConnection}, BlockHash,
     },
     state::{
         branch::Leaf,
@@ -97,9 +97,9 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 }
 
-async fn handle_conn(
+async fn handle_conn<T: BlockStorageConnection>(
     conn: LocalSocketStream,
-    db: BlockStoreConn,
+    db: T,
     best_chain: Vec<Leaf<Ledger>>,
 ) -> Result<(), anyhow::Error> {
     let (reader, mut writer) = conn.into_split();

@@ -1,4 +1,4 @@
-use crate::block::{precomputed::PrecomputedBlock, store::BlockStoreConn, BlockHash};
+use crate::block::{precomputed::PrecomputedBlock, store::{BlockStoreConn, BlockStorageConnection}, BlockHash};
 
 use self::{
     branch::{Branch, Leaf},
