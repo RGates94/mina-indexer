@@ -294,6 +294,20 @@ async fn handle_conn(
     let mut buffer = Vec::with_capacity(128);
     let _read = reader.read_until(0, &mut buffer).await?;
 
+    if let Some(bytes) = handle_commands(buffer, db, best_chain, ledger, summary)? {
+        writer.write_all(&bytes).await?
+    }
+
+    Ok(())
+}
+
+fn handle_commands<T: BlockStore>(
+    buffer: Vec<u8>,
+    db: T,
+    best_chain: Vec<BlockHash>,
+    ledger: Ledger,
+    summary: SummaryVerbose,
+) -> Result<Option<Vec<u8>>, anyhow::Error> {
     let mut buffers = buffer.split(|byte| *byte == 32);
     let command = buffers.next().unwrap();
     let command_string = String::from_utf8(command.to_vec())?;
@@ -310,7 +324,9 @@ async fn handle_conn(
             if let Some(account) = account {
                 debug!("Writing account {account:?} to client");
                 let bytes = bcs::to_bytes(account)?;
-                writer.write_all(&bytes).await?;
+                Ok(Some(bytes))
+            } else {
+                Ok(None)
             }
         }
         "best_chain" => {
@@ -325,7 +341,7 @@ async fn handle_conn(
                 .map(|state_hash| db.get_block(&state_hash).unwrap().unwrap())
                 .collect();
             let bytes = bcs::to_bytes(&best_chain)?;
-            writer.write_all(&bytes).await?;
+            Ok(Some(bytes))
         }
         "best_ledger" => {
             info!("Received best_ledger command");
@@ -333,9 +349,9 @@ async fn handle_conn(
             let path = &String::from_utf8(data_buffer[..data_buffer.len() - 1].to_vec())?
                 .parse::<PathBuf>()?;
             debug!("Writing ledger to {}", path.display());
-            fs::write(path, format!("{ledger:?}")).await?;
+            //fs::write(path, format!("{ledger:?}"))?;
             let bytes = bcs::to_bytes(&format!("Ledger written to {}", path.display()))?;
-            writer.write_all(&bytes).await?;
+            Ok(Some(bytes))
         }
         "summary" => {
             info!("Received summary command");
@@ -344,26 +360,69 @@ async fn handle_conn(
                 .parse::<bool>()?;
             if verbose {
                 let bytes = bcs::to_bytes(&summary)?;
-                writer.write_all(&bytes).await?;
+                Ok(Some(bytes))
             } else {
                 let summary: SummaryShort = summary.into();
                 let bytes = bcs::to_bytes(&summary)?;
-                writer.write_all(&bytes).await?;
+                Ok(Some(bytes))
             }
         }
         bad_request => {
             let err_msg = format!("Malformed request: {bad_request}");
             error!("{err_msg}");
-            return Err(anyhow::Error::msg(err_msg));
+            Err(anyhow::Error::msg(err_msg))
         }
     }
-
-    Ok(())
 }
 
 async fn create_dir_if_non_existent(path: &str) {
     if metadata(path).await.is_err() {
         debug!("Creating directory {path}");
         create_dir_all(path).await.unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::{Date, Instant, Month, PrimitiveDateTime, Time};
+    use crate::server::handle_commands;
+    use crate::block::store::MockBlockStore;
+    use crate::state::ledger::Ledger;
+    use crate::state::summary::{SummaryVerbose, WitnessTreeSummaryVerbose};
+
+    fn test_handle_commands() {
+        let command_strings = vec![
+            "summarytrue",
+            "summaryfalse",
+        ];
+        let results: Vec<Result<Option<Vec<u8>>, anyhow::Error>> = vec![
+            Ok(None)
+        ];
+        let ledger: Ledger = Ledger::new();
+        let summary  = SummaryVerbose {
+            uptime: Default::default(),
+            date_time: PrimitiveDateTime::new(Date::from_calendar_date(2023, Month::July, 5).unwrap(), Time::MIDNIGHT),
+            blocks_processed: 0,
+            witness_tree: WitnessTreeSummaryVerbose {
+                best_tip_length: 0,
+                best_tip_hash: String::new(),
+                canonical_tip_length: 0,
+                canonical_tip_hash: String::new(),
+                root_hash: String::new(),
+                root_height: 0,
+                root_length: 0,
+                num_leaves: 0,
+                num_dangling: 0,
+                max_dangling_height: 0,
+                max_dangling_length: 0,
+                witness_tree: String::new(),
+            },
+            db_stats: None,
+        };
+        for (command_string, result) in command_strings.iter().zip(results) {
+            let db = MockBlockStore::new();
+            let buffer = command_string.bytes().collect::<Vec<_>>();
+            assert_eq!(None, handle_commands(buffer, db, vec![], ledger.clone(), summary.clone()).unwrap());
+        }
     }
 }
