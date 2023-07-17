@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::PublicKey;
 
-#[derive(PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
 pub struct Amount(pub u64);
 
 #[derive(PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -72,13 +72,17 @@ impl Ord for Account {
 
 impl std::fmt::Debug for Account {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Account {{ {:?}, {}, {}, {:?} }}",
-            &self.public_key.to_address()[..15],
-            self.balance.0,
-            self.nonce.0,
-            self.delegate
-        )
+        let pk = self.public_key.to_address();
+        let delegate = self
+            .delegate
+            .as_ref()
+            .map(|pk| pk.to_address())
+            .unwrap_or(pk.clone());
+        writeln!(f, "{{")?;
+        writeln!(f, "  pk:       {pk}")?;
+        writeln!(f, "  balance:  {}", self.balance.0)?;
+        writeln!(f, "  nonce:    {}", self.nonce.0)?;
+        writeln!(f, "  delegate: {delegate}")?;
+        writeln!(f, "}}")
     }
 }

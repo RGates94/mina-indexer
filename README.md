@@ -29,7 +29,7 @@ subject to change without notice. With that being said, happy hacking!
 Clone the repo
 
 ```sh
-git clone https://github.com/Granola-Team/mina-indexer.git
+git clone git@github.com:Granola-Team/mina-indexer.git
 cd mina-indexer
 ```
 
@@ -40,22 +40,72 @@ nix develop
 nix build '.?submodules=1'
 ```
 
-Run `mina-indexer` using logs from `PATH`
+alternatively, you can build with `cargo` inside the nix shell.
+
+### Starting the indexer
+
+For example, from the root of this project, you can start the `mina-indexer` for mainnet via
 
 ```sh
-mina-indexer run --logs-dir PATH
+mina-indexer server -i -l tests/data/genesis_ledgers/mainnet.json -s path/to/your/precomputed/blocks/dir
 ```
 
-Get `PUB_KEY`'s balance
+### Some other useful CLI flags
 
+* `--ledger`, `-l`
+  * genesis ledger `.json` file to use to initialize the indexer
+* `--ignore-db`, `-i`
+  * determines if the indexer will restore from an existing database
+  * for now, it's required to start without a db
+* `--root-hash`, `-r`
+  * state hash of the genesis block
+  * defaults to mainnet genesis state hash `3NKeMoncuHab5ScarV5ViyF16cJPT4taWNSaTLS64Dp67wuXigPZ`
+* `--startup-dir`, `-s`
+  * directory of precomputed blocks to initialize the indexer's state
+  * defaults to `$HOME/.mina-indexer/startup-blocks`
+* `--watch-dir`, `-w`
+  * directory the block receiver watches to keep the indexer up to date
+  * defaults to `$HOME/.mina-indexer/watch-blocks`
+* `--database-dir`, `-d`
+  * directory to store the indexer's internal RocksDB database
+  * defaults to `$HOME/.mina-indexer/database`
+
+### Some useful client commands
+
+Query data with the `mina-indexer` client (from another terminal window)
+
+* Get the account info for a specific Public Key
 ```sh
-mina-indexer account balance --pub-key PUB_KEY
+mina-indexer client account --public-key PUBLIC_KEY
 ```
 
-For more commands, check out the help menu
+* Get the current best chain of block hashes within the root branch
+```sh
+mina-indexer client best-chain
+```
+
+* Dump the best ledger to a file
+```sh
+mina-indexer client best-ledger --path PATH
+```
+
+* Get a summary of the indexer state
+```sh
+mina-indexer client summary
+```
+
+* Get a verbose summary of the indexer state (pretty pictures included!)
+```sh
+mina-indexer client summary -v
+```
+
+### Help
+
+For more information, check out the help menus
 
 ```sh
-mina-indexer help
+mina-indexer server --help
+mina-indexer client --help
 ```
 
 ## About the development environment

@@ -1,111 +1,13 @@
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
+use crate::{
+    block::{precomputed::PrecomputedBlock, BlockHash},
+    state::Canonicity,
 };
-
-use rocksdb::{DBWithThreadMode, MultiThreaded};
-use thiserror::Error;
-
-use super::precomputed::PrecomputedBlock;
-
-use mockall::*;
-use mockall::predicate::*;
-
-pub trait BlockStorage: r2d2::ManageConnection {}
+use mockall::automock;
 
 #[automock]
-pub trait BlockStorageConnection {
+pub trait BlockStore {
     fn add_block(&self, block: &PrecomputedBlock) -> anyhow::Result<()>;
-    fn get_block(&self, state_hash: &str) -> anyhow::Result<Option<PrecomputedBlock>>;
-    fn db_path(&self) -> &Path;
-    fn test_conn(&mut self) -> BlockStoreResult<()>;
-}
-
-#[derive(Debug)]
-pub struct BlockStoreConn {
-    db_path: PathBuf,
-    database: DBWithThreadMode<MultiThreaded>,
-}
-
-impl BlockStoreConn {
-    pub fn new_read_only(path: &Path, secondary: &Path) -> BlockStoreResult<Self> {
-        let database_opts = rocksdb::Options::default();
-        let database =
-            rocksdb::DBWithThreadMode::open_as_secondary(&database_opts, path, secondary)?;
-        Ok(Self {
-            db_path: PathBuf::from(path),
-            database,
-        })
-    }
-    pub fn new(path: &Path) -> BlockStoreResult<Self> {
-        let mut database_opts = rocksdb::Options::default();
-        database_opts.create_if_missing(true);
-        let database = rocksdb::DBWithThreadMode::open(&database_opts, path)?;
-        Ok(Self {
-            db_path: PathBuf::from(path),
-            database,
-        })
-    }
-}
-
-impl BlockStorageConnection for BlockStoreConn {
-    fn add_block(&self, block: &PrecomputedBlock) -> anyhow::Result<()> {
-        let key = block.state_hash.as_bytes();
-        let value = bcs::to_bytes(&block)?;
-        self.database.put(key, value)?;
-        Ok(())
-    }
-
-    fn get_block(&self, state_hash: &str) -> anyhow::Result<Option<PrecomputedBlock>> {
-        self.database.try_catch_up_with_primary().ok();
-        let key = state_hash.as_bytes();
-        if let Some(bytes) = self.database.get_pinned(key)?.map(|bytes| bytes.to_vec()) {
-            let precomputed_block = bcs::from_bytes(&bytes)?;
-            return Ok(Some(precomputed_block));
-        }
-        Ok(None)
-    }
-
-    fn db_path(&self) -> &Path {
-        &self.db_path
-    }
-
-    fn test_conn(&mut self) -> BlockStoreResult<()> {
-        self.database.put("test", "value")?;
-        self.database.delete("test")?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum BlockStoreError {
-    DBError(rocksdb::Error),
-}
-type BlockStoreResult<T> = Result<T, BlockStoreError>;
-
-impl Display for BlockStoreError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockStoreError::DBError(err) => {
-                write!(f, "{}", format_args!("BlockStoreError: {err}"))
-            }
-        }
-    }
-}
-
-impl From<rocksdb::Error> for BlockStoreError {
-    fn from(value: rocksdb::Error) -> Self {
-        Self::DBError(value)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_mock_block_store() {
-        let mut mock_conn = MockBlockStorageConnection::new();
-        mock_conn.expect_get_block().returning(|_| Ok(None));
-        assert_eq!(None, mock_conn.get_block("").unwrap());
-    }
+    fn get_block(&self, state_hash: &BlockHash) -> anyhow::Result<Option<PrecomputedBlock>>;
+    fn set_canonicity(&self, state_hash: &BlockHash, canonicity: Canonicity) -> anyhow::Result<()>;
+    fn get_canonicity(&self, state_hash: &BlockHash) -> anyhow::Result<Option<Canonicity>>;
 }

@@ -7,8 +7,8 @@ use mina_indexer::{
 
 #[tokio::test]
 async fn account_diffs() {
-    let log_dir = PathBuf::from("./tests/data/beautified_sequential_blocks");
-    let mut block_parser = BlockParser::new(&log_dir).unwrap();
+    let log_dir = PathBuf::from("./tests/data/sequential_blocks");
+    let mut block_parser = BlockParser::new_testing(&log_dir).unwrap();
 
     // mainnet-105490-3NKxEA9gztvEGxL4uk4eTncZAxuRmMsB8n81UkeAMevUjMbLHmkC.json
     let block = block_parser
@@ -72,13 +72,13 @@ async fn account_diffs() {
     println!("=== Initial ===");
     println!("{:?}", ledger);
 
-    ledger.apply_diff(diff.clone()).unwrap();
+    ledger.apply_diff(&diff).unwrap();
 
     let expected = Ledger::from(vec![
         (
             "B62qrusueb8gq1RbZWyZG9EN1eCKjbByTQ39fgiGigkvg7nJR3VdGwX",
             1000000000000,
-            Some(0),
+            None,
             None,
         ),
         (
@@ -96,7 +96,7 @@ async fn account_diffs() {
         (
             "B62qqhURJQo3CvWC3WFo9LhUhtcaJWLBcJsaA3DXaU2GH5KgXujZiwB",
             1000000000000,
-            Some(0),
+            None,
             None,
         ),
         (

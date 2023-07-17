@@ -17,6 +17,15 @@ pub struct Block {
     pub state_hash: BlockHash,
     pub height: u32,
     pub blockchain_length: Option<u32>,
+    pub global_slot_since_genesis: u32,
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct BlockWithoutHeight {
+    pub parent_hash: BlockHash,
+    pub state_hash: BlockHash,
+    pub blockchain_length: Option<u32>,
+    pub global_slot_since_genesis: u32,
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -48,8 +57,83 @@ impl Block {
             parent_hash,
             state_hash,
             height,
+            global_slot_since_genesis: precomputed_block
+                .protocol_state
+                .body
+                .t
+                .t
+                .consensus_state
+                .t
+                .t
+                .global_slot_since_genesis
+                .t
+                .t,
             blockchain_length: precomputed_block.blockchain_length,
         }
+    }
+
+    pub fn summary(&self) -> String {
+        format!(
+            "{{ len: {}, state: {} }}",
+            self.blockchain_length
+                .map_or("unknown".to_string(), |len| len.to_string()),
+            self.state_hash.0
+        )
+    }
+}
+
+impl From<Block> for BlockWithoutHeight {
+    fn from(value: Block) -> Self {
+        Self {
+            parent_hash: value.parent_hash.clone(),
+            state_hash: value.state_hash.clone(),
+            global_slot_since_genesis: value.global_slot_since_genesis,
+            blockchain_length: value.blockchain_length,
+        }
+    }
+}
+
+impl BlockWithoutHeight {
+    pub fn from_precomputed(precomputed_block: &PrecomputedBlock) -> Self {
+        let parent_hash =
+            BlockHash::from_hashv1(precomputed_block.protocol_state.previous_state_hash.clone());
+        let state_hash = BlockHash(precomputed_block.state_hash.clone());
+        Self {
+            parent_hash,
+            state_hash,
+            global_slot_since_genesis: precomputed_block
+                .protocol_state
+                .body
+                .t
+                .t
+                .consensus_state
+                .t
+                .t
+                .global_slot_since_genesis
+                .t
+                .t,
+            blockchain_length: precomputed_block.blockchain_length,
+        }
+    }
+}
+
+impl std::cmp::PartialOrd for Block {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.state_hash == other.state_hash {
+            Some(std::cmp::Ordering::Equal)
+        } else if self.height > other.height
+            || self.height == other.height && self.state_hash.0 > other.state_hash.0
+        {
+            Some(std::cmp::Ordering::Greater)
+        } else {
+            Some(std::cmp::Ordering::Less)
+        }
+    }
+}
+
+impl std::cmp::Ord for Block {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.partial_cmp(other).unwrap()
     }
 }
 
@@ -57,9 +141,23 @@ impl std::fmt::Debug for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Block {{ height: {}, len: {}, state: {}, parent: {} }}",
+            "Block {{ height: {}, len: {}, slot: {}, state: {}, parent: {} }}",
             self.height,
             self.blockchain_length.unwrap_or(0),
+            self.global_slot_since_genesis,
+            &self.state_hash.0[0..12],
+            &self.parent_hash.0[0..12]
+        )
+    }
+}
+
+impl std::fmt::Debug for BlockWithoutHeight {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Block {{ len: {}, slot: {}, state: {}, parent: {} }}",
+            self.blockchain_length.unwrap_or(0),
+            self.global_slot_since_genesis,
             &self.state_hash.0[0..12],
             &self.parent_hash.0[0..12]
         )

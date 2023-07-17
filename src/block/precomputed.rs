@@ -5,9 +5,11 @@ use mina_serialization_types::{
     staged_ledger_diff::{
         self, SignedCommandPayloadBody, StagedLedgerDiff, StagedLedgerDiffJson, StakeDelegation,
     },
-    v1::{DeltaTransitionChainProof, ProtocolStateProofV1, PublicKeyV1},
+    v1::{DeltaTransitionChainProof, ProtocolStateProofV1, PublicKeyV1, UserCommandWithStatusV1},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::state::Canonicity;
 
 pub struct BlockLogContents {
     pub(crate) state_hash: String,
@@ -26,6 +28,7 @@ pub struct BlockLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrecomputedBlock {
+    pub canonicity: Option<Canonicity>,
     pub state_hash: String,
     pub scheduled_time: String,
     pub protocol_state: ProtocolState,
@@ -39,14 +42,16 @@ impl PrecomputedBlock {
     pub fn from_log_contents(log_contents: BlockLogContents) -> serde_json::Result<Self> {
         let state_hash = log_contents.state_hash;
         let blockchain_length = log_contents.blockchain_length;
+        let str = String::from_utf8_lossy(&log_contents.contents);
         let BlockLog {
             scheduled_time,
             protocol_state,
             protocol_state_proof,
             staged_ledger_diff,
             delta_transition_chain_proof,
-        } = serde_json::from_slice(&log_contents.contents)?;
+        } = serde_json::from_str::<BlockLog>(&str).unwrap();
         Ok(Self {
+            canonicity: None,
             state_hash,
             scheduled_time,
             blockchain_length,
@@ -55,6 +60,17 @@ impl PrecomputedBlock {
             staged_ledger_diff: staged_ledger_diff.into(),
             delta_transition_chain_proof: delta_transition_chain_proof.into(),
         })
+    }
+
+    pub fn cmds(&self) -> Vec<UserCommandWithStatusV1> {
+        self.staged_ledger_diff
+            .diff
+            .clone()
+            .inner()
+            .0
+            .inner()
+            .inner()
+            .commands
     }
 }
 
@@ -129,5 +145,18 @@ impl PrecomputedBlock {
         });
 
         public_keys
+    }
+
+    pub fn global_slot_since_genesis(&self) -> u32 {
+        self.protocol_state
+            .body
+            .t
+            .t
+            .consensus_state
+            .t
+            .t
+            .global_slot_since_genesis
+            .t
+            .t
     }
 }
